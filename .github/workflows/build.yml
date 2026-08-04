@@ -1,0 +1,162 @@
+name: Build Homebridge UXC Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      homebridge_version:
+        default: "latest"
+        required: false
+      config_ui_version:
+        default: "latest"
+        required: false
+
+  schedule:
+    - cron: "0 6 * * 1"
+
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "config.json"
+      - ".github/workflows/build.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-release
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # ==========================================================
+      # STEP 1: Build container rootfs (ALL software installed here)
+      # ==========================================================
+      - name: Build rootfs (Docker)
+        run: |
+          set -eux
+
+          docker buildx build \
+            --platform linux/arm64 \
+            --tag homebridge-uxc:latest \
+            --build-arg HOMEBRIDGE_VERSION="${{ inputs.homebridge_version || 'latest' }}" \
+            --build-arg CONFIG_UI_VERSION="${{ inputs.config_ui_version || 'latest' }}" \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --provenance=false \
+            --sbom=false \
+            --output type=tar,dest=rootfs.tar \
+            .
+
+      # ==========================================================
+      # STEP 2: Assemble OCI bundle
+      # ==========================================================
+      - name: Assemble bundle
+        run: |
+          set -eux
+
+          mkdir -p bundle/rootfs
+
+          # Extract image filesystem
+          tar -xpf rootfs.tar -C bundle/rootfs
+          rm -f rootfs.tar
+
+          # Strip unnecessary files
+          rm -rf bundle/rootfs/usr/share/man \
+                 bundle/rootfs/usr/share/doc \
+                 bundle/rootfs/var/cache/apk/* \
+                 bundle/rootfs/tmp/*
+
+          # Copy config
+          cp ./config.json bundle/config.json
+
+          # Validate config syntax and required OCI fields
+          python3 -m json.tool bundle/config.json > /dev/null
+          python3 - <<'PY'
+          import json
+          c = json.load(open("bundle/config.json"))
+          required = ["ociVersion", "process", "root", "mounts"]
+          for k in required:
+              assert k in c, f"Missing OCI field: {k}"
+          print("OCI config OK")
+          PY
+
+          # DEBUG: Verify Node location
+          find bundle/rootfs -name node
+
+          # Validate runtime and core binaries exist
+          test -x bundle/rootfs/usr/local/bin/node
+          test -x bundle/rootfs/usr/local/bin/homebridge
+          test -x bundle/rootfs/usr/local/bin/hb-service
+          test -d bundle/rootfs/usr/local/lib/node_modules/homebridge
+          test -d bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x
+
+          # Create final bundle
+          tar -czf homebridge-arm64.tar.gz -C bundle .
+
+      # ==========================================================
+      # STEP 3: Minimal sanity check & contents review
+      # ==========================================================
+      - name: Sanity check bundle
+        run: |
+          set -eux
+
+          tar -tzf homebridge-arm64.tar.gz | grep -q config.json
+          tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/usr/local/bin/node"
+
+          echo "Bundle contents preview:"
+          tar -tzf homebridge-arm64.tar.gz | sed -n '1,50p'
+
+          echo "Bundle size:"
+          du -sh homebridge-arm64.tar.gz
+
+      # ==========================================================
+      # STEP 4: Release
+      # ==========================================================
+      - name: Determine Release Name & Metadata
+        run: |
+          set -eux
+          CURRENT_DATE=$(date +'%Y-%m-%d')
+          # Extract version robustly using Python JSON parsing
+          if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json" ]; then
+            HB_VERSION=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json'))['version'])")
+          else
+            HB_VERSION="${{ inputs.homebridge_version || 'latest' }}"
+          fi
+          echo "RELEASE_NAME=Homebridge V${HB_VERSION}-${CURRENT_DATE}" >> $GITHUB_ENV
+          echo "BUILD_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ env.RELEASE_NAME }}
+          tag_name: latest
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: homebridge-arm64.tar.gz
+          body: |
+            Homebridge UXC Bundle (Stable Build)
+
+            -----------------------------
+            DESIGN NOTES
+            -----------------------------
+            - Homebridge is installed inside Docker image only
+            - No dependency inspection is done on GitHub runner
+            - Bundle is purely filesystem-based OCI export
+
+            -----------------------------
+            BUILD INFO
+            -----------------------------
+            Homebridge: ${{ env.RELEASE_NAME }}
+            Commit: ${{ env.BUILD_SHA }}
+            Base: Alpine 3.22 (arm64)
+            Build system: Docker Buildx
