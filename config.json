@@ -13,19 +13,25 @@
       "gid": 0
     },
     "args": [
+      "/sbin/tini",
+      "-g",
+      "--",
       "/bin/sh",
       "-c",
       "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
     ],
     "env": [
-      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
       "HOME=/root",
       "TERM=xterm",
       "TZ=UTC",
       "NODE_ENV=production",
+      "NPM_CONFIG_PREFIX=/usr/local",
+      "NODE_PATH=/usr/local/lib/node_modules",
       "npm_config_update_notifier=false",
-      "npm_config_cache=/tmp/.npm",
-      "npm_config_devdir=/tmp/.node-gyp",
+      "NPM_CONFIG_CACHE=/tmp/.npm",
+      "NPM_CONFIG_DEVDIR=/tmp/.node-gyp",
+      "XDG_CONFIG_HOME=/tmp/.config",
       "NODE_OPTIONS=--max-old-space-size=256",
       "UV_THREADPOOL_SIZE=4",
       "MDNS_INTERFACE=br-lan",
@@ -153,7 +159,7 @@
     {
       "destination": "/var/lib/homebridge",
       "type": "none",
-      "source": "/mnt/X6/UXC/homebridge/data",
+      "source": "/mnt/usb/UXC/homebridge/data",
       "options": [
         "rbind",
         "rw"
@@ -162,7 +168,7 @@
     {
       "destination": "/etc/resolv.conf",
       "type": "none",
-      "source": "/mnt/X6/UXC/homebridge/data/resolv.conf",
+      "source": "/mnt/usb/UXC/homebridge/data/resolv.conf",
       "options": [
         "rbind",
         "ro"
