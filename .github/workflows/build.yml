@@ -66,8 +66,8 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          # Extract image filesystem
-          tar -xpf rootfs.tar -C bundle/rootfs
+          # Extract image filesystem forcing root ownership (0:0)
+          tar -xpf rootfs.tar -C bundle/rootfs --owner=0 --group=0 --numeric-owner
           rm -f rootfs.tar
 
           # Strip unnecessary files
