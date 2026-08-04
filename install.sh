@@ -111,7 +111,22 @@ echo "📂 [Phase 3] Constructing host storage target directories..."
 
 echo "[i] Creating directories..."
 mkdir -p "$BUNDLE_PATH"
-mkdir -p "$PERSISTENT_DATA_SOURCE"
+mkdir -p "$PERSISTENT_DATA_SOURCE/node_modules"
+mkdir -p "$PERSISTENT_DATA_SOURCE/persist"
+mkdir -p "$PERSISTENT_DATA_SOURCE/accessories"
+
+echo "[i] Linking plugins directory directly to node_modules..."
+rm -rf "$PERSISTENT_DATA_SOURCE/plugins"
+ln -sf "$PERSISTENT_DATA_SOURCE/node_modules" "$PERSISTENT_DATA_SOURCE/plugins"
+
+echo "[i] Generating clean static container resolv.conf..."
+cat <<'EOF' > "$PERSISTENT_DATA_SOURCE/resolv.conf"
+nameserver 1.1.1.1
+nameserver 9.9.9.9
+options timeout:2 attempts:3
+EOF
+chmod 644 "$PERSISTENT_DATA_SOURCE/resolv.conf"
+
 sync
 
 echo "========(+) DONE ✅ (+)========"
@@ -191,6 +206,25 @@ apply_jq "Mount Target Configuration" \
      end'
 
 echo "   ↳ Mount Target bound to: $PERSISTENT_DATA_SOURCE -> /var/lib/homebridge ✅"
+
+
+# Split 1b: Strip -P parameter from process.args (Forces standard node_modules usage)
+apply_jq "Process Arguments Cleanup" \
+    '.process.args |= map(gsub(" -P /var/lib/homebridge/plugins"; ""))'
+
+echo "   ↳ Removed -P plugin path override from runtime arguments ✅"
+
+
+# Split 1c: Ensure resolv.conf mounts to host static persistent DNS file
+apply_jq "DNS Mount Configuration" \
+    --arg dns_src "$PERSISTENT_DATA_SOURCE/resolv.conf" \
+    'if (.mounts | map(select(.destination == "/etc/resolv.conf")) | length) > 0 then
+       .mounts |= map(if .destination == "/etc/resolv.conf" then .source = $dns_src | .options = ["rbind", "ro"] else . end)
+     else
+       .mounts += [{"destination": "/etc/resolv.conf", "source": $dns_src, "type": "none", "options": ["rbind", "ro"]}]
+     end'
+
+echo "   ↳ DNS resolve mapping bound to: $PERSISTENT_DATA_SOURCE/resolv.conf ✅"
 
 
 # Split 2: Update Timezone (TZ)
