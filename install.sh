@@ -208,9 +208,9 @@ apply_jq "Mount Target Configuration" \
 echo "   ↳ Mount Target bound to: $PERSISTENT_DATA_SOURCE -> /var/lib/homebridge ✅"
 
 
-# Split 1b: Strip -P parameter from process.args (Forces standard node_modules usage)
+# Split 1b: Strip -P parameter from process.args (Non-regex string split/join for OpenWrt JQ)
 apply_jq "Process Arguments Cleanup" \
-    '.process.args |= map(gsub(" -P /var/lib/homebridge/plugins"; ""))'
+    '.process.args |= map(split(" -P /var/lib/homebridge/plugins") | join(""))'
 
 echo "   ↳ Removed -P plugin path override from runtime arguments ✅"
 
