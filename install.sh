@@ -26,6 +26,7 @@ TARGET_MOUNT="/mnt/X6"                     # Physical host flash drive mount poi
 ARCHIVE="$TARGET_MOUNT/homebridge.tar.gz"
 BUNDLE_PATH="$TARGET_MOUNT/UXC/$CONTAINER_NAME/bundle"
 PERSISTENT_DATA_SOURCE="$TARGET_MOUNT/UXC/$CONTAINER_NAME/data"
+RESOLV_CONF_SOURCE="$PERSISTENT_DATA_SOURCE/resolv.conf"
 
 # ==============================================================================
 # ENVIRONMENT VARIABLES & PERFORMANCE TUNING
@@ -109,23 +110,22 @@ printf '\n\n\n'
 # ==========================================
 echo "📂 [Phase 3] Constructing host storage target directories..."
 
-echo "[i] Creating directories..."
+echo "[i] Creating persistent storage directories..."
 mkdir -p "$BUNDLE_PATH"
 mkdir -p "$PERSISTENT_DATA_SOURCE/node_modules"
 mkdir -p "$PERSISTENT_DATA_SOURCE/persist"
 mkdir -p "$PERSISTENT_DATA_SOURCE/accessories"
 
-echo "[i] Linking plugins directory directly to node_modules..."
+echo "[i] Linking plugins directory to node_modules..."
 rm -rf "$PERSISTENT_DATA_SOURCE/plugins"
 ln -sf "$PERSISTENT_DATA_SOURCE/node_modules" "$PERSISTENT_DATA_SOURCE/plugins"
 
 echo "[i] Generating clean static container resolv.conf..."
-cat <<'EOF' > "$PERSISTENT_DATA_SOURCE/resolv.conf"
+cat <<'EOF' > "$RESOLV_CONF_SOURCE"
 nameserver 1.1.1.1
 nameserver 9.9.9.9
-options timeout:2 attempts:3
 EOF
-chmod 644 "$PERSISTENT_DATA_SOURCE/resolv.conf"
+chmod 644 "$RESOLV_CONF_SOURCE"
 
 sync
 
@@ -180,9 +180,9 @@ echo "========(+) DONE ✅ (+)========"
 printf '\n\n\n'
 
 # ==========================================
-# Phase 5: Dynamic Variable Injection (JQ Splits)
+# Phase 5: Dynamic Variable Injection
 # ==========================================
-echo "📝 [Phase 5] Injecting master variable matrix via individual JQ splits..."
+echo "📝 [Phase 5] Injecting host-specific variable matrix..."
 
 # Helper function to perform safe JQ transformations with strict error checking
 apply_jq() {
@@ -196,92 +196,44 @@ apply_jq() {
     mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
 }
 
-# Split 1: Dynamic Mount Injection Target (/var/lib/homebridge)
-apply_jq "Mount Target Configuration" \
-    --arg src "$PERSISTENT_DATA_SOURCE" \
-    'if (.mounts | map(select(.destination == "/var/lib/homebridge")) | length) > 0 then
-       .mounts |= map(if .destination == "/var/lib/homebridge" then .source = $src else . end)
-     else
-       .mounts += [{"destination": "/var/lib/homebridge", "source": $src, "type": "bind", "options": ["rbind", "rw"]}]
-     end'
+# Split 1: Dynamic Mount Mapping Target (/var/lib/homebridge & /etc/resolv.conf)
+apply_jq "Host Storage Mount Configuration" \
+    --arg data "$PERSISTENT_DATA_SOURCE" \
+    --arg dns "$RESOLV_CONF_SOURCE" \
+    '(.mounts |= map(
+        if .destination == "/var/lib/homebridge" then .source = $data
+        elif .destination == "/etc/resolv.conf" then .source = $dns
+        else . end
+    ))'
 
-echo "   ↳ Mount Target bound to: $PERSISTENT_DATA_SOURCE -> /var/lib/homebridge ✅"
+echo "   ↳ Storage targets bound to $TARGET_MOUNT ✅"
 
-
-# Split 1b: Strip -P parameter from process.args (Non-regex string split/join for OpenWrt JQ)
-apply_jq "Process Arguments Cleanup" \
-    '.process.args |= map(split(" -P /var/lib/homebridge/plugins") | join(""))'
-
-echo "   ↳ Removed -P plugin path override from runtime arguments ✅"
-
-
-# Split 1c: Ensure resolv.conf mounts to host static persistent DNS file
-apply_jq "DNS Mount Configuration" \
-    --arg dns_src "$PERSISTENT_DATA_SOURCE/resolv.conf" \
-    'if (.mounts | map(select(.destination == "/etc/resolv.conf")) | length) > 0 then
-       .mounts |= map(if .destination == "/etc/resolv.conf" then .source = $dns_src | .options = ["rbind", "ro"] else . end)
-     else
-       .mounts += [{"destination": "/etc/resolv.conf", "source": $dns_src, "type": "none", "options": ["rbind", "ro"]}]
-     end'
-
-echo "   ↳ DNS resolve mapping bound to: $PERSISTENT_DATA_SOURCE/resolv.conf ✅"
-
-
-# Split 2: Update Timezone (TZ)
-apply_jq "Timezone Configuration" \
+# Split 2: Dynamic Environment Variable Matrix (TZ, mDNS, Memory, Threads, IP)
+apply_jq "Runtime Environment Matrix" \
     --arg tz "TZ=$TIMEZONE" \
-    '.process.env = (.process.env | map(select(startswith("TZ=") | not)) + [$tz])'
-
-echo "   ↳ Timezone assigned to: $TIMEZONE ✅"
-
-
-# Split 3: Update MDNS Interface Network Bridge
-apply_jq "mDNS Interface Configuration" \
     --arg mdns "MDNS_INTERFACE=$MDNS_NET_INTERFACE" \
-    '.process.env = (.process.env | map(select(startswith("MDNS_INTERFACE=") | not)) + [$mdns])'
-
-echo "   ↳ mDNS broadcast mapped to: $MDNS_NET_INTERFACE ✅"
-
-
-# Split 4: Update Node.js Old Space Memory Constraints
-apply_jq "Node Memory Configuration" \
     --arg node_opt "NODE_OPTIONS=--max-old-space-size=$NODE_MEMORY_LIMIT" \
-    '.process.env = (.process.env | map(select(startswith("NODE_OPTIONS=") | not)) + [$node_opt])'
-
-echo "   ↳ Node engine memory threshold set to: ${NODE_MEMORY_LIMIT}MB ✅"
-
-
-# Split 5: Update Libuv Thread Pool Allocation
-apply_jq "Libuv Thread Pool Configuration" \
     --arg threads "UV_THREADPOOL_SIZE=$THREAD_POOL_SIZE" \
-    '.process.env = (.process.env | map(select(startswith("UV_THREADPOOL_SIZE=") | not)) + [$threads])'
-
-echo "   ↳ Libuv backend worker threads balanced at: $THREAD_POOL_SIZE ✅"
-
-
-# Split 6: Update Homebridge Binding IP Target
-apply_jq "Homebridge IP Configuration" \
     --arg ip "HOMEBRIDGE_IP=$BIND_IP" \
-    '.process.env = (.process.env | map(select(startswith("HOMEBRIDGE_IP=") | not)) + [$ip])'
+    '(.process.env = (.process.env 
+        | map(select(
+            startswith("TZ=") or 
+            startswith("MDNS_INTERFACE=") or 
+            startswith("NODE_OPTIONS=") or 
+            startswith("UV_THREADPOOL_SIZE=") or 
+            startswith("HOMEBRIDGE_IP=") | not
+          )) 
+        + [$tz, $mdns, $node_opt, $threads, $ip]
+    ))'
 
-echo "   ↳ Network socket interface listening on: $BIND_IP ✅"
+echo "   ↳ Environment matrix injected (TZ: $TIMEZONE | RAM: ${NODE_MEMORY_LIMIT}MB | Threads: $THREAD_POOL_SIZE) ✅"
 
-
-# Split 6b: Update Web UI Binding Host
-apply_jq "Web UI Host Configuration" \
-    --arg ui_host "HOMEBRIDGE_CONFIG_UI_HOST=$BIND_IP" \
-    '.process.env = (.process.env | map(select(startswith("HOMEBRIDGE_CONFIG_UI_HOST=") | not)) + [$ui_host])'
-
-echo "   ↳ Web UI socket host forced to: $BIND_IP ✅"
-
-
-# Split 7: Toggle Kernel Security Boundaries
-apply_jq "Kernel Privilege Configuration" \
+# Split 3: Kernel Privilege Boundary
+apply_jq "Kernel Security Policy" \
     --argjson nnp "$NO_NEW_PRIVILEGES" \
     '.process.noNewPrivileges = $nnp'
 
-echo "   ↳ Kernel privilege escalation guard: $NO_NEW_PRIVILEGES ✅"
-
+echo "   ↳ Security privilege escalation flag: $NO_NEW_PRIVILEGES ✅"
 
 printf '\n\n\n'
 
