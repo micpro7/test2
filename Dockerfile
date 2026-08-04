@@ -12,14 +12,6 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
 
 # ==========================================================
 # System dependencies
-# (nodejs and npm are inherently provided by the base image)
-# 
-# Notes on compilation tools:
-# - git, openssh-client: Required by npm to install beta plugins or dependencies hosted directly on GitHub URLs.
-# - linux-headers: Required by node-gyp to compile native C/C++ plugins that need kernel/hardware access.
-# - python3, make, g++: Standard node-gyp requirements for compiling native modules.
-# - sudo, bash: Added for debugging, container maintenance, and plugin shell scripts.
-# - libc6-compat: Required for running pre-compiled glibc-linked binaries or certain native modules on Alpine (musl).
 # ==========================================================
 RUN apk add --no-cache \
     tzdata \
@@ -40,14 +32,14 @@ RUN apk add --no-cache \
 
 # ==========================================================
 # FIX: Repair sudo ownership & setuid bit for UXC compatibility
+# (Targeted ownership fix without recursive churn)
 # ==========================================================
-RUN chown -R root:root /etc/sudo* /usr/bin/sudo /usr/libexec/sudo 2>/dev/null || true \
+RUN chown root:root /usr/bin/sudo \
  && chmod 4755 /usr/bin/sudo
 
 # ==========================================================
 # CRITICAL FIX:
 # Ensure deterministic npm global install location and module path
-# (prevents “missing package.json” / wrong prefix issues)
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
     NODE_PATH=/usr/local/lib/node_modules \
