@@ -66,8 +66,8 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          # Extract image filesystem forcing root ownership (0:0)
-          tar -xpf rootfs.tar -C bundle/rootfs --owner=0 --group=0 --numeric-owner
+          # Extract image filesystem preserving permissions and forcing root (0:0)
+          tar -xpf rootfs.tar -C bundle/rootfs --owner=0 --group=0 --numeric-owner --same-permissions
           rm -f rootfs.tar
 
           # Strip unnecessary files
@@ -100,8 +100,11 @@ jobs:
           test -d bundle/rootfs/usr/local/lib/node_modules/homebridge
           test -d bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x
 
-          # Create final bundle
-          tar -czf homebridge-arm64.tar.gz -C bundle .
+          # Explicitly repair setuid bit on sudo before packaging
+          chmod 4755 bundle/rootfs/usr/bin/sudo 2>/dev/null || true
+
+          # Create final bundle forcing 0:0 ownership across all files
+          tar -czf homebridge-arm64.tar.gz -C bundle . --owner=0 --group=0 --numeric-owner
 
       # ==========================================================
       # STEP 3: Minimal sanity check & contents review
