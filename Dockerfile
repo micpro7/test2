@@ -71,8 +71,8 @@ RUN set -eux; \
     command -v homebridge; \
     command -v hb-service; \
     node -e "console.log('Node.js Version:', process.version)"; \
-    node -e "console.log('Homebridge OK:', require('homebridge/package.json').version)"; \
-    node -e "console.log('UI OK:', require('homebridge-config-ui-x/package.json').version)"
+    node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
+    node -e "console.log('UI OK:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
 # ==========================================================
 # Create explicit mount points for read-only rootfs compatibility
