@@ -24,6 +24,8 @@
       "TZ=UTC",
       "NODE_ENV=production",
       "npm_config_update_notifier=false",
+      "NPM_CONFIG_CACHE=/tmp/.npm",
+      "NPM_CONFIG_DEVDIR=/tmp/.node-gyp",
       "NODE_OPTIONS=--max-old-space-size=256",
       "UV_THREADPOOL_SIZE=4",
       "MDNS_INTERFACE=br-lan",
