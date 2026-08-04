@@ -151,7 +151,7 @@
     {
       "destination": "/var/lib/homebridge",
       "type": "none",
-      "source": "/mnt/flash/Config/OpenWRT/UXC/homebridge",
+      "source": "/mnt/SSD/Config/OpenWRT/UXC/homebridge",
       "options": [
         "rbind",
         "rw"
