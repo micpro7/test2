@@ -39,23 +39,27 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       # ==========================================================
-      # STEP 1: Build container rootfs (ALL software installed here)
+      # STEP 1: Build image and export raw rootfs tarball
       # ==========================================================
       - name: Build rootfs (Docker)
         run: |
           set -eux
 
+          # 1. Build local container image
           docker buildx build \
             --platform linux/arm64 \
-            --tag homebridge-uxc:latest \
+            --tag homebridge-uxc:build \
             --build-arg HOMEBRIDGE_VERSION="${{ inputs.homebridge_version || 'latest' }}" \
             --build-arg CONFIG_UI_VERSION="${{ inputs.config_ui_version || 'latest' }}" \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
-            --provenance=false \
-            --sbom=false \
-            --output type=tar,dest=rootfs.tar \
+            --load \
             .
+
+          # 2. Export raw filesystem tarball using container export
+          CONTAINER_ID=$(docker create homebridge-uxc:build)
+          docker export "$CONTAINER_ID" > rootfs.tar
+          docker rm "$CONTAINER_ID"
 
       # ==========================================================
       # STEP 2: Assemble OCI bundle
@@ -66,7 +70,7 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          # Extract image filesystem preserving permissions and forcing root (0:0)
+          # Extract image filesystem forcing root (0:0) and preserving permissions
           tar -xpf rootfs.tar -C bundle/rootfs --owner=0 --group=0 --numeric-owner --same-permissions
           rm -f rootfs.tar
 
@@ -100,11 +104,17 @@ jobs:
           test -d bundle/rootfs/usr/local/lib/node_modules/homebridge
           test -d bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x
 
-          # Explicitly repair setuid bit on sudo before packaging
+          # Explicitly ensure setuid bit on sudo before packaging
           chmod 4755 bundle/rootfs/usr/bin/sudo 2>/dev/null || true
 
-          # Create final bundle forcing 0:0 ownership across all files
-          tar -czf homebridge-arm64.tar.gz -C bundle . --owner=0 --group=0 --numeric-owner
+          # Create final bundle with strict root ownership & preserved permissions
+          tar \
+            --numeric-owner \
+            --owner=0 \
+            --group=0 \
+            --same-permissions \
+            -czf homebridge-arm64.tar.gz \
+            -C bundle .
 
       # ==========================================================
       # STEP 3: Minimal sanity check & contents review
@@ -153,8 +163,8 @@ jobs:
             DESIGN NOTES
             -----------------------------
             - Homebridge is installed inside Docker image only
-            - No dependency inspection is done on GitHub runner
-            - Bundle is purely filesystem-based OCI export
+            - Flawless single-layer raw rootfs export via container export
+            - Bundle is purely filesystem-based OCI export for UXC
 
             -----------------------------
             BUILD INFO
