@@ -19,7 +19,7 @@ echo -e "\n\n\n"
 # =========================
 # Configuration
 # =========================
-BUNDLE_URL="https://github.com/micpro7/openwrt-uxc-homebridge/releases/latest/download/homebridge-arm64.tar.gz"
+BUNDLE_URL="https://github.com/micpro7/test2/releases/latest/download/homebridge-arm64.tar.gz"
 
 CONTAINER_NAME="homebridge"
 
