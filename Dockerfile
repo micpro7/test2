@@ -39,6 +39,12 @@ RUN apk add --no-cache \
     openssh-client
 
 # ==========================================================
+# FIX: Repair sudo ownership & setuid bit for UXC compatibility
+# ==========================================================
+RUN chown -R root:root /etc/sudo* /usr/bin/sudo /usr/libexec/sudo 2>/dev/null || true \
+ && chmod 4755 /usr/bin/sudo
+
+# ==========================================================
 # CRITICAL FIX:
 # Ensure deterministic npm global install location and module path
 # (prevents “missing package.json” / wrong prefix issues)
