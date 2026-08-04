@@ -115,16 +115,20 @@ RUN set -eux; \
     node -e "console.log('UI OK:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
 # ==========================================================
-# Create explicit mount points for read-only rootfs compatibility
+# Create explicit mount points for persistent storage
+# LINK FIX: Symlink /var/lib/homebridge/plugins -> node_modules
+# guarantees backward compatibility whether plugins are searched 
+# via -P or standard local node_modules resolution.
 # ==========================================================
 RUN mkdir -p \
     /var/lib/homebridge \
-    /var/lib/homebridge/plugins \
+    /var/lib/homebridge/node_modules \
     /var/lib/homebridge/persist \
-    /var/lib/homebridge/accessories
+    /var/lib/homebridge/accessories \
+ && ln -sf /var/lib/homebridge/node_modules /var/lib/homebridge/plugins
 
 # ==========================================================
-# Runtime environment
+# Runtime environment & Container Launch
 # ==========================================================
 ENV HOME=/root \
     TZ=UTC \
@@ -134,3 +138,7 @@ ENV HOME=/root \
     XDG_CONFIG_HOME=/tmp/.config
 
 WORKDIR /var/lib/homebridge
+
+# RUNTIME LAUNCH COMMAND:
+# Runs hb-service explicitly using local storage scope without locking -P flags
+CMD ["/usr/local/bin/hb-service", "run", "--allow-root", "-U", "/var/lib/homebridge"]
