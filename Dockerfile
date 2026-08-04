@@ -11,7 +11,7 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
       org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
 
 # ==========================================================
-# System dependencies
+# System dependencies & Tini PID 1 Engine
 # ==========================================================
 RUN apk add --no-cache \
     tzdata \
@@ -28,7 +28,8 @@ RUN apk add --no-cache \
     linux-headers \
     sudo \
     bash \
-    openssh-client
+    openssh-client \
+    tini
 
 # ==========================================================
 # UXC FIX: Replace sudo binary with robust option-stripping wrapper
@@ -70,7 +71,7 @@ EOF
 RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
-# READ-ONLY ROOTFS FIX: Redirect npm cache/config/build to /tmp
+# READ-ONLY / OVERLAY ROOTFS FIX: Redirect npm cache/config/build to /tmp
 # Pre-creates directories and redirects /root/.npm and /root/.config
 # to the writable /tmp mount preventing ENOENT mkdir errors.
 # ==========================================================
@@ -86,7 +87,7 @@ RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
 ENV NPM_CONFIG_PREFIX=/usr/local \
     NODE_PATH=/usr/local/lib/node_modules \
     npm_config_unsafe_perm=true \
-    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin
 
 RUN npm config set prefix /usr/local \
  && npm config set update-notifier false \
@@ -128,7 +129,7 @@ RUN mkdir -p \
  && ln -sf /var/lib/homebridge/node_modules /var/lib/homebridge/plugins
 
 # ==========================================================
-# Runtime environment & Container Launch
+# Runtime Environment & Container Launch
 # ==========================================================
 ENV HOME=/root \
     TZ=UTC \
@@ -139,6 +140,13 @@ ENV HOME=/root \
 
 WORKDIR /var/lib/homebridge
 
+# EXPOSE UI PORT
+EXPOSE 8581
+
+# PID 1 INIT ENGINE:
+# Reaps zombie child processes (FFmpeg, Python, BLE scanners) and forwards SIGTERM cleanly
+ENTRYPOINT ["/sbin/tini", "-g", "--"]
+
 # RUNTIME LAUNCH COMMAND:
-# Runs hb-service explicitly using local storage scope without locking -P flags
-CMD ["/usr/local/bin/hb-service", "run", "--allow-root", "-U", "/var/lib/homebridge"]
+# Runs hb-service inside a fail-safe auto-restart loop
+CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
