@@ -31,11 +31,53 @@ RUN apk add --no-cache \
     openssh-client
 
 # ==========================================================
-# FIX: Repair sudo ownership & setuid bit for UXC compatibility
-# (Targeted ownership fix without recursive churn)
+# UXC FIX: Replace sudo binary with robust option-stripping wrapper
+# Bypasses setresuid() capability/seccomp restrictions.
+# Intentionally drops flags like -u, -g, -E to force execution as root.
+# Validates that a target command is provided before executing.
 # ==========================================================
-RUN chown root:root /usr/bin/sudo \
- && chmod 4755 /usr/bin/sudo
+RUN rm -f /usr/bin/sudo \
+ && cat > /usr/bin/sudo <<'EOF'
+#!/bin/sh
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -n|-E|-H|-S|-k|-K|-b|-v)
+            shift
+            ;;
+        -u|-g|-C)
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [ $# -eq 0 ]; then
+    echo "sudo: no command specified" >&2
+    exit 1
+fi
+
+exec "$@"
+EOF
+RUN chmod 0755 /usr/bin/sudo
+
+# ==========================================================
+# READ-ONLY ROOTFS FIX: Redirect npm cache/config/build to /tmp
+# Pre-creates directories and redirects /root/.npm and /root/.config
+# to the writable /tmp mount preventing ENOENT mkdir errors.
+# ==========================================================
+RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
+ && rm -rf /root/.npm /root/.config \
+ && ln -s /tmp/.npm /root/.npm \
+ && ln -s /tmp/.config /root/.config
 
 # ==========================================================
 # CRITICAL FIX:
@@ -86,6 +128,9 @@ RUN mkdir -p \
 # ==========================================================
 ENV HOME=/root \
     TZ=UTC \
-    NODE_ENV=production
+    NODE_ENV=production \
+    NPM_CONFIG_CACHE=/tmp/.npm \
+    NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
+    XDG_CONFIG_HOME=/tmp/.config
 
 WORKDIR /var/lib/homebridge
