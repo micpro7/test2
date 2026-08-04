@@ -3,7 +3,7 @@
   "hostname": "homebridge",
   "annotations": {
     "org.opencontainers.image.source": "https://github.com/micpro7/HomeBridge-UXC",
-    "io.homebridge.plugin-path": "/var/lib/homebridge/plugins",
+    "io.homebridge.plugin-path": "/var/lib/homebridge/node_modules",
     "io.homebridge.storage-path": "/var/lib/homebridge"
   },
   "process": {
@@ -15,7 +15,7 @@
     "args": [
       "/bin/sh",
       "-c",
-      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/plugins; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
+      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
     ],
     "env": [
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -153,7 +153,7 @@
     {
       "destination": "/var/lib/homebridge",
       "type": "none",
-      "source": "/mnt/SSD/Config/OpenWRT/UXC/homebridge",
+      "source": "/mnt/X6/UXC/homebridge/data",
       "options": [
         "rbind",
         "rw"
@@ -162,7 +162,7 @@
     {
       "destination": "/etc/resolv.conf",
       "type": "none",
-      "source": "/etc/resolv.conf",
+      "source": "/mnt/X6/UXC/homebridge/data/resolv.conf",
       "options": [
         "rbind",
         "ro"
